@@ -85,7 +85,7 @@ plot_line_equal_skill!()
 
 # TODO: plot joint contours with player A winning 1 game
 games=two_player_toy_games(5, 0)
-zs = randn(2,15)
+zs = randn(2,15)*2
 jt(zs)=exp(all_games_log_likelihood(zs,games))
 jtd(zs)=exp(joint_log_density(zs,games))
 plot(title="Two Player Joint Posterior Plot",
@@ -118,11 +118,10 @@ plot(title="Two Player 20 Matches",
 skillcontour!(jt20,colour=1)
 plot_line_equal_skill!()
 
-using Random
-using Distributions
+
 function elbo(params,logp,num_samples)
   #Generate random samples from uniform distribution
-  U=rand(Uniform(0,1),size(params[1])[1],num_samples)
+  U=rand(size(params[1])[1],num_samples)
   #Reparametrization to genearte Gaussian of desired parameter
   zs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*params[2] .+ params[1]
   log_z=factorized_gaussian_log_density(0,0,zs)
@@ -148,9 +147,11 @@ toy_ls = [0.5,0.2] # Initual log_sigma, can initialize randomly!
 toy_params_init = (toy_mu, toy_ls)
 toy_evidence=two_player_toy_games(3,2)
 
+function joint_log_density(zs,games)
+  return log_prior(zs) .+ all_games_log_likelihood(zs,games)
+end
 
 function fit_toy_variational_dist(init_params, toy_evidence; num_itrs=200, lr= 1e-2, num_q_samples = 10)
-
   params_cur = init_params
   #Generate true prior
   pzs=randn(size(init_params[1])[1],num_q_samples)
@@ -161,22 +162,22 @@ function fit_toy_variational_dist(init_params, toy_evidence; num_itrs=200, lr= 1
       xlabel = "Player A Skill",
       ylabel = "Player B Skill"
      )
-
   for i in 1:num_itrs
     elbo=neg_toy_elbo(params_cur; games = toy_evidence, num_samples = num_q_samples)
     f(params)=neg_toy_elbo(params; games = toy_evidence, num_samples = num_q_samples)
     grad_params = gradient(f, params_cur)[1]
     params_cur =  params_cur .- grad_params .* lr
-    @info "loss: $(elbo) "
+    @info "loss: $(elbo), params_cur:$(params_cur) "
     #TODO: skillcontour!(...,colour=:red) plot likelihood contours for target posterior
     display(skillcontour!(jointp,colour="red"))
-    plot_line_equal_skill()
     #TODO: display(skillcontour!(..., colour=:blue)) plot likelihood contours for variational posterior
     U=rand(size(init_params[1])[1],num_q_samples)
     qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*params_cur[2] .+ params_cur[1]
-    jointq(qzs)=exp.(joint_log_density(qzs,toy_evidence))
+    jointq(qzs)=exp.(factorized_gaussian_log_density(params_cur[1],params_cur[2],qzs) .+
+    all_games_log_likelihood(zs,toy_evidence))
     display(skillcontour!(jointq,colour=1))
   end
+  plot_line_equal_skill!()
   return params_cur
 end
 
