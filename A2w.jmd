@@ -21,6 +21,9 @@ We are given The prior over each player’s skill is a standard normal distribut
 a prior independent. That is each $z_i$ is iid N(0,1).
 
 ```julia
+using Statistics: mean
+using Zygote
+using Logging
 
 function factorized_gaussian_log_density(mu,logsig,xs)
   """
@@ -116,6 +119,9 @@ function plot_line_equal_skill!()
   plot!(range(-3, 3, length=200), range(-3, 3, length=200), label="Equal Skill")
 end
 
+# Convenience function for producing toy games between two players.
+two_player_toy_games(p1_wins, p2_wins) = vcat([repeat([1,2]',p1_wins), repeat([2,1]',p2_wins)]...)
+
 jointPrior(zs) = exp.(log_prior(zs))
 plot(title="Two Player Joint Prior Contour Plot",
     xlabel = "Player A Skill",
@@ -202,8 +208,33 @@ all players' skills. This batch of samples zs will be an array with dimensions (
 This function should return a single scalar. Hint: You will need to use the reparamterization trick
 when sampling zs.
 
+```julia
+
+function elbo(params,logp,num_samples)
+  #Generate random samples from uniform distribution
+  U=rand(size(params[1])[1],num_samples)
+  #Reparametrization to genearte Gaussian of desired parameter
+  zs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*params[2] .+ params[1]
+  log_z=factorized_gaussian_log_density(0,0,zs)
+  logp_estimate = logp
+  log_data=logp .- log_z #Separate data from logp
+  #estimate $q_{Φ}(z|data)$
+  logq_estimate = factorized_gaussian_log_density(params[1],params[2],zs) .+ log_data
+  return sum(logp_estimate .- logq_estimate) ./ num_samples
+end
+```
+
+
 (b) [2 points] Write a loss function called neg toy elbo that takes variational distribution parameters
 and an array of game outcomes, and returns the negative elbo estimate with 100 samples.
+
+```julia
+function neg_toy_elbo(params; games = two_player_toy_games(1,0), num_samples = 100)
+  zs=randn(size(params[1])[1],num_samples)
+  logp = joint_log_density(zs,games)
+  return -elbo(params,logp, num_samples)
+end
+```
 
 (c) [5 points] Write an optimization function called fit toy variational dist which takes initial vari-
 ational parameters, and the evidence. Inside it will perform a number of iterations of gradient descent
@@ -219,15 +250,128 @@ where for each iteration :
 blue.
 Return the parameters resulting from training.
 
+```julia
+function fit_toy_variational_dist(init_params, toy_evidence; num_itrs=200, lr= 1e-6, num_q_samples = 10)
+  params_cur = init_params
+  elbo_val = neg_toy_elbo(params_cur; games = toy_evidence, num_samples = num_q_samples)
+  #Generate true prior
+  pzs=randn(size(init_params[1])[1],num_q_samples)
+  jointp(pzs)=exp.(joint_log_density(pzs,toy_evidence)) #function for contour plot
+
+  #initialize plot comment out during compile jmd
+  #plot(title="Fit Toy Variational Dist",
+  #    xlabel = "Player A Skill",
+  #    ylabel = "Player B Skill"
+  #   )
+
+  for i in 1:num_itrs
+    f(params) = neg_toy_elbo(params; games = toy_evidence, num_samples = num_q_samples)
+    grad_params = gradient(f, params_cur)[1]
+    params_cur =  params_cur .- grad_params .* lr
+    elbo_val = neg_toy_elbo(params_cur; games = toy_evidence, num_samples = num_q_samples)
+    #@info "loss: $(elbo) "
+    #Note: the following code do the required ploting but comment out during compile jmd to avoid too much plots in the final file
+    #U=rand(size(init_params[1])[1],num_q_samples)
+    #qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*params_cur[2] .+ params_cur[1]
+    #jointq(qzs)=exp.(factorized_gaussian_log_density(params_cur[1],params_cur[2],qzs) .+
+    #all_games_log_likelihood(qzs,toy_evidence))
+    #display(skillcontour!(jointq,colour=1))
+  end
+  #plot_line_equal_skill!()
+
+  return params_cur, elbo_val
+end
+```
+
+
 (d) [2 points] Initialize a variational distribution parameters and optimize them to approximate the joint
 where we observe player A winning 1 game. Report thenal loss. Also plot the optimized variational
 approximation contours (in blue) aand the target distribution (in red) on the same axes.
+
+```julia
+num_players_toy = 2
+toy_mu = [-1.,0.8] # Initial mu, can initialize randomly!
+toy_ls = [0.5,0.2] # Initual log_sigma, can initialize randomly!
+toy_params_init = (toy_mu, toy_ls)
+toy_evidence=two_player_toy_games(1,0)
+fit=fit_toy_variational_dist(toy_params_init, toy_evidence; num_itrs=200, lr= 1e-8, num_q_samples = 10)
+opt_params=fit[1]
+pzs=randn(size(toy_params_init[1])[1],10)
+jointp(pzs)=exp.(joint_log_density(pzs,toy_evidence)) #function for contour plot
+U=rand(size(toy_params_init[1])[1],10)
+qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*opt_params[2] .+ opt_params[1]
+jointq(qzs)=exp.(factorized_gaussian_log_density(opt_params[1],opt_params[2],qzs) .+ all_games_log_likelihood(qzs,toy_evidence))
+
+# plot result
+print("Final loss:",fit[2])
+plot(title="Fit Toy Variational Dist, A Win 1",
+    xlabel = "Player A Skill",
+    ylabel = "Player B Skill"
+   )
+skillcontour!(jointp,colour="red")
+skillcontour!(jointq,colour=1)
+plot_line_equal_skill!()
+
+```
+
 
 (e) [2 points] Initialize a variational distribution parameters and optimize them to approximate the joint
 where we observe player A winning 10 games. Report thenal loss. Also plot the optimized variational
 approximation contours (in blue) aand the target distribution (in red) on the same axes.
 
+```julia
+num_players_toy = 2
+toy_mu = [-1.,0.8] # Initial mu, can initialize randomly!
+toy_ls = [0.5,0.2] # Initual log_sigma, can initialize randomly!
+toy_params_init = (toy_mu, toy_ls)
+toy_evidence=two_player_toy_games(10,0)
+fit=fit_toy_variational_dist(toy_params_init, toy_evidence; num_itrs=200, lr= 1e-8, num_q_samples = 10)
+opt_params=fit[1]
+pzs=randn(size(toy_params_init[1])[1],10)
+jointp(pzs)=exp.(joint_log_density(pzs,toy_evidence)) #function for contour plot
+U=rand(size(toy_params_init[1])[1],10)
+qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*opt_params[2] .+ opt_params[1]
+jointq(qzs)=exp.(factorized_gaussian_log_density(opt_params[1],opt_params[2],qzs) .+ all_games_log_likelihood(qzs,toy_evidence))
+
+# plot result
+print("Final loss:",fit[2])
+plot(title="Fit Toy Variational Dist, A Win 10",
+    xlabel = "Player A Skill",
+    ylabel = "Player B Skill"
+   )
+skillcontour!(jointp,colour="red")
+skillcontour!(jointq,colour=1)
+plot_line_equal_skill!()
+
+```
+
+
 (f) [2 points] Initialize a variational distribution parameters and optimize them to approximate the joint
 where we observe player A winning 10 games and player B winning 10 games. Report thenal loss.
 Also plot the optimized variational approximation contours (in blue) aand the target distribution (in
 red) on the same axes.
+
+```julia
+num_players_toy = 2
+toy_mu = [-1.,0.8] # Initial mu, can initialize randomly!
+toy_ls = [0.5,0.2] # Initual log_sigma, can initialize randomly!
+toy_params_init = (toy_mu, toy_ls)
+toy_evidence=two_player_toy_games(10,10)
+fit=fit_toy_variational_dist(toy_params_init, toy_evidence; num_itrs=200, lr= 1e-8, num_q_samples = 10)
+opt_params=fit[1]
+pzs=randn(size(toy_params_init[1])[1],10)
+jointp(pzs)=exp.(joint_log_density(pzs,toy_evidence)) #function for contour plot
+U=rand(size(toy_params_init[1])[1],10)
+qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*opt_params[2] .+ opt_params[1]
+jointq(qzs)=exp.(factorized_gaussian_log_density(opt_params[1],opt_params[2],qzs) .+ all_games_log_likelihood(qzs,toy_evidence))
+
+# plot result
+print("Final loss:",fit[2])
+plot(title="Fit Toy Variational Dist, A,B Both Win 10",
+    xlabel = "Player A Skill",
+    ylabel = "Player B Skill"
+   )
+skillcontour!(jointp,colour="red")
+skillcontour!(jointq,colour=1)
+plot_line_equal_skill!()
+```

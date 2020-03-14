@@ -99,12 +99,13 @@ plot_line_equal_skill!()
 
 # TODO: plot joint contours with player A winning 10 games
 games=two_player_toy_games(1, 0)
-skillcontour!(jt10,colour=1)
+
 plot(title="Two Player 10 Matches",
     xlabel = "Player 1 Skill",
     ylabel = "Player 2 Skill"
    )
 jt10(zs)=exp.(all_games_log_likelihood(zs,games))
+skillcontour!(jt10,colour=1)
 plot_line_equal_skill!()
 
 
@@ -140,18 +141,7 @@ function neg_toy_elbo(params; games = two_player_toy_games(1,0), num_samples = 1
 end
 
 
-# Toy game
-num_players_toy = 2
-toy_mu = [-2.,3.] # Initial mu, can initialize randomly!
-toy_ls = [0.5,0.2] # Initual log_sigma, can initialize randomly!
-toy_params_init = (toy_mu, toy_ls)
-toy_evidence=two_player_toy_games(3,2)
-
-function joint_log_density(zs,games)
-  return log_prior(zs) .+ all_games_log_likelihood(zs,games)
-end
-
-function fit_toy_variational_dist(init_params, toy_evidence; num_itrs=200, lr= 1e-2, num_q_samples = 10)
+function fit_toy_variational_dist(init_params, toy_evidence; num_itrs=200, lr= 1e-6, num_q_samples = 10)
   params_cur = init_params
   #Generate true prior
   pzs=randn(size(init_params[1])[1],num_q_samples)
@@ -162,31 +152,44 @@ function fit_toy_variational_dist(init_params, toy_evidence; num_itrs=200, lr= 1
       xlabel = "Player A Skill",
       ylabel = "Player B Skill"
      )
+  display(skillcontour!(jointp,colour="red"))
   for i in 1:num_itrs
     elbo=neg_toy_elbo(params_cur; games = toy_evidence, num_samples = num_q_samples)
     f(params)=neg_toy_elbo(params; games = toy_evidence, num_samples = num_q_samples)
     grad_params = gradient(f, params_cur)[1]
     params_cur =  params_cur .- grad_params .* lr
-    @info "loss: $(elbo), params_cur:$(params_cur) "
-    #TODO: skillcontour!(...,colour=:red) plot likelihood contours for target posterior
-    display(skillcontour!(jointp,colour="red"))
-    #TODO: display(skillcontour!(..., colour=:blue)) plot likelihood contours for variational posterior
-    U=rand(size(init_params[1])[1],num_q_samples)
-    qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*params_cur[2] .+ params_cur[1]
-    jointq(qzs)=exp.(factorized_gaussian_log_density(params_cur[1],params_cur[2],qzs) .+
-    all_games_log_likelihood(zs,toy_evidence))
-    display(skillcontour!(jointq,colour=1))
+    @info "loss: $(elbo) "
+    #U=rand(size(init_params[1])[1],num_q_samples)
+    #qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*params_cur[2] .+ params_cur[1]
+    #jointq(qzs)=exp.(factorized_gaussian_log_density(params_cur[1],params_cur[2],qzs) .+
+    #all_games_log_likelihood(qzs,toy_evidence))
+    #display(skillcontour!(jointq,colour=1))
   end
-  plot_line_equal_skill!()
+  #plot_line_equal_skill!()
   return params_cur
 end
 
-fit_toy_variational_dist(toy_params_init, toy_evidence; num_itrs=200, lr= 1e-2, num_q_samples = 10)
-params_ret=([-0.30823121619653104, 0.3631615384805915], [0.925795140030016, 0.7914438293357612])
-xs=randn(1,2)
-zs=factorized_gaussian_log_density(params_ret[1],params_ret[2],xs)
-postq(zs)=exp.(joint_log_density(zs,toy_evidence))
-skillcontour!(postq,colour=2)
+# Toy game
+num_players_toy = 2
+toy_mu = [-1.,0.8] # Initial mu, can initialize randomly!
+toy_ls = [0.5,0.2] # Initual log_sigma, can initialize randomly!
+toy_params_init = (toy_mu, toy_ls)
+toy_evidence=two_player_toy_games(10,10)
+opt_params=fit_toy_variational_dist(toy_params_init, toy_evidence; num_itrs=200, lr= 1e-8, num_q_samples = 10)
+pzs=randn(size(toy_params_init[1])[1],10)
+jointp(pzs)=exp.(joint_log_density(pzs,toy_evidence)) #function for contour plot
+U=rand(size(toy_params_init[1])[1],10)
+qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*opt_params[2] .+ opt_params[1]
+jointq(qzs)=exp.(factorized_gaussian_log_density(opt_params[1],opt_params[2],qzs) .+ all_games_log_likelihood(qzs,toy_evidence))
+
+#initialize plot
+plot(title="Fit Toy Variational Dist",
+    xlabel = "Player A Skill",
+    ylabel = "Player B Skill"
+   )
+display(skillcontour!(jointp,colour="red"))
+display(skillcontour!(jointq,colour=1))
+plot_line_equal_skill!()
 
 #TODO: fit q with SVI observing player A winning 1 game
 #TODO: save final posterior plots
