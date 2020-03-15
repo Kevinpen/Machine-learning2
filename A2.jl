@@ -124,7 +124,7 @@ function elbo(params,logp,num_samples)
   #Generate random samples from uniform distribution
   U=rand(size(params[1])[1],num_samples)
   #Reparametrization to genearte Gaussian of desired parameter
-  zs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*params[2] .+ params[1]
+  zs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*exp.(params[2]) .+ params[1]
   log_z=factorized_gaussian_log_density(0,0,zs)
   logp_estimate = logp
   log_data=logp .- log_z #Separate data from logp
@@ -143,10 +143,10 @@ end
 
 function fit_toy_variational_dist(init_params, toy_evidence; num_itrs=200, lr= 1e-6, num_q_samples = 10)
   params_cur = init_params
+  elbo_val=neg_toy_elbo(params_cur; games = toy_evidence, num_samples = num_q_samples)
   #Generate true prior
   pzs=randn(size(init_params[1])[1],num_q_samples)
   jointp(pzs)=exp.(joint_log_density(pzs,toy_evidence)) #function for contour plot
-
   #initialize plot
   plot(title="Fit Toy Variational Dist",
       xlabel = "Player A Skill",
@@ -154,20 +154,22 @@ function fit_toy_variational_dist(init_params, toy_evidence; num_itrs=200, lr= 1
      )
   display(skillcontour!(jointp,colour="red"))
   for i in 1:num_itrs
-    elbo=neg_toy_elbo(params_cur; games = toy_evidence, num_samples = num_q_samples)
     f(params)=neg_toy_elbo(params; games = toy_evidence, num_samples = num_q_samples)
     grad_params = gradient(f, params_cur)[1]
     params_cur =  params_cur .- grad_params .* lr
-    @info "loss: $(elbo) "
+    elbo_val=neg_toy_elbo(params_cur; games = toy_evidence, num_samples = num_q_samples)
+    #@info "loss: $(elbo_val) "
     #U=rand(size(init_params[1])[1],num_q_samples)
-    #qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*params_cur[2] .+ params_cur[1]
+    #qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*exp.(params_cur[2]) .+ params_cur[1]
     #jointq(qzs)=exp.(factorized_gaussian_log_density(params_cur[1],params_cur[2],qzs) .+
     #all_games_log_likelihood(qzs,toy_evidence))
     #display(skillcontour!(jointq,colour=1))
   end
   #plot_line_equal_skill!()
-  return params_cur
+  return params_cur,elbo_val
 end
+
+
 
 # Toy game
 num_players_toy = 2
@@ -175,13 +177,14 @@ toy_mu = [-1.,0.8] # Initial mu, can initialize randomly!
 toy_ls = [0.5,0.2] # Initual log_sigma, can initialize randomly!
 toy_params_init = (toy_mu, toy_ls)
 toy_evidence=two_player_toy_games(10,10)
-opt_params=fit_toy_variational_dist(toy_params_init, toy_evidence; num_itrs=200, lr= 1e-8, num_q_samples = 10)
+fit=fit_toy_variational_dist(toy_params_init, toy_evidence; num_itrs=200, lr= 1e-8, num_q_samples = 10)
+opt_params=fit[1]
 pzs=randn(size(toy_params_init[1])[1],10)
 jointp(pzs)=exp.(joint_log_density(pzs,toy_evidence)) #function for contour plot
 U=rand(size(toy_params_init[1])[1],10)
-qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*opt_params[2] .+ opt_params[1]
+qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*exp.(opt_params[2]) .+ opt_params[1]
 jointq(qzs)=exp.(factorized_gaussian_log_density(opt_params[1],opt_params[2],qzs) .+ all_games_log_likelihood(qzs,toy_evidence))
-
+print("Final loss:",fit[2])
 #initialize plot
 plot(title="Fit Toy Variational Dist",
     xlabel = "Player A Skill",
@@ -191,14 +194,9 @@ display(skillcontour!(jointp,colour="red"))
 display(skillcontour!(jointq,colour=1))
 plot_line_equal_skill!()
 
-#TODO: fit q with SVI observing player A winning 1 game
-#TODO: save final posterior plots
 
-#TODO: fit q with SVI observing player A winning 10 games
-#TODO: save final posterior plots
+file = matopen("tennis_data.mat")
 
-#TODO: fit q with SVI observing player A winning 10 games and player B winning 10 games
-#TODO: save final posterior plots
 
 ## Question 4
 # Load the Data
@@ -209,25 +207,82 @@ tennis_games = Int.(vars["G"])
 num_players = length(player_names)
 print("Loaded data for $num_players players")
 
+three_player_games=vcat([1,2]',[2,1]',[1,3]',[1,3]',[3,2]')
+pair_games=vcat([1,2]',[2,1]')
+
+zs=randn(3,10)
+z2=zs[1:2,:]
+
+
+all_games=all_games_log_likelihood(zs,three_player_games)
+pa2(z2)=exp.(log_prior(z2) .+ all_games_log_likelihood(z2,pair_games))
+
+p3(z2)=exp.(log_prior(z2) .+all_games)
+plot(title="Fit Toy Variational Dist",
+    xlabel = "Player A Skill",
+    ylabel = "Player B Skill"
+   )
+skillcontour!(pa2,colour="blue")
+skillcontour!(p3,colour="red")
+
+
+
+
+tennis_games[tennis_games[:,1][i]==1 for i in 1:107]
+tennis_games[filter(x->x==1,tn),:]
+tn=tennis_games
+player1_games=[[]]
+for i in 1:length(tennis_games)
+  if tennis_games[i,1]==1
+    append!(player1_games, tennis_games[i,:])
+  end
+end
+p1=fill(Int[], 1, 2)
+
+reshape([1,2],1,2)
 
 function fit_variational_dist(init_params, tennis_games; num_itrs=200, lr= 1e-2, num_q_samples = 10)
   params_cur = init_params
+  elbo_val=neg_toy_elbo(params_cur; games = tennis_games, num_samples = num_q_samples)
   for i in 1:num_itrs
-    grad_params = #TODO: gradients of variational objective wrt params
-    params_cur = #TODO: update parmaeters wite lr-sized steps in desending gradient direction
-    @info #TODO: report objective value with current parameters
+    f(params)=neg_toy_elbo(params; games = tennis_games, num_samples = num_q_samples)
+    grad_params = gradient(f, params_cur)[1]
+    params_cur =  params_cur .- grad_params .* lr
+    elbo_val=neg_toy_elbo(params_cur; games = tennis_games, num_samples = num_q_samples)
+    @info "loss: $(elbo_val) "
   end
-  return params_cur
+  return params_cur, elbo_val
 end
 
-# TODO: Initialize variational family
-init_mu = #random initialziation
-init_log_sigma = # random initialziation
+num_q_samples = 10
+init_mu = randn(num_players, num_q_samples)
+init_log_sigma = randn(num_players, num_q_samples)
 init_params = (init_mu, init_log_sigma)
 
 # Train variational distribution
-trained_params = fit_variational_dist(init_params, tennis_games)
+trained_params = fit_variational_dist(init_params, tennis_games,lr= 1e-10)
+print("Final negative ELBO:", trained_params[2])
+opt_params=trained_params[1]
+means=vec(sum(opt_params[1], dims=2))
+perm = sortperm(means)
+print(perm[98:107])
 
+plot(means[perm])
+
+meanp1=mean(opt_params[1][1,:])
+logsp1=mean(opt_params[2][1,:])
+meanp2=mean(opt_params[1][5,:])
+logsp2=mean(opt_params[2][5,:])
+meanp=vcat(meanp1,meanp2)
+logsp=vcat(logsp1,logsp2)
+U=rand(2,10)
+zs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .* exp.(logsp) .+ meanp
+jointp(zs)=exp.(factorized_gaussian_log_density(meanp,logsp,zs))
+plot(title="Fit Toy Variational Dist",
+    xlabel = "Player A Skill",
+    ylabel = "Player B Skill"
+   )
+skillcontour!(jointp,colour="red")
 
 #TODO: 10 players with highest mean skill under variational model
 #hint: use sortperm
