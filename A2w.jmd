@@ -11,8 +11,8 @@ options:
 The goal of this assignment is to get you familiar with the basics of
 Bayesian inference in large models with continuous latent variables, and the basics of stochastic variational inference.
 
-# 0.1 Model deﬁnition
-## 1 Implementing the model [10 points]
+
+# Implementing the model [10 points]
 (a) [2 points] Implement a function log prior that computes the log of the prior over all player’s skills.
 Specifically, given a K × N array where each row is a setting of the skills for all N players, it returns
 a K × 1 array, where each row contains a scalar giving the log-prior for that set of skills
@@ -22,8 +22,6 @@ a prior independent. That is each $z_i$ is iid N(0,1).
 
 ```julia
 using Statistics: mean
-using Zygote
-using Logging
 
 function factorized_gaussian_log_density(mu,logsig,xs)
   """
@@ -87,7 +85,7 @@ using Test
   @test size(joint_log_density(test_zs,test_games)) == (1,B)
   end
 ```
-## 2 Examining the posterior for only two players and toy data [10 points]
+# Examining the posterior for only two players and toy data [10 points]
 To get a feel for this model, we’ll ﬁrst consider the case where we only have 2 players, A and B. We’ll examine how the prior and likelihood interact when conditioning on diﬀerent sets of games.
 
 Provided in the starter code is a function skillcontour! which evaluates a provided function on a grid of zA and zB’s and plots the isocontours of that function. As well there is a function plot line equal skill!. We have included an example for how you can use these functions.
@@ -183,7 +181,7 @@ skillcontour!(jt20,colour=1)
 plot_line_equal_skill!()
 ```
 
-# 3 Stochastic Variational Inference on Two Players and Toy Data [18 points]
+#  Stochastic Variational Inference on Two Players and Toy Data [18 points]
 
 One nice thing about a Bayesian approach is that it separates the model specication from the approxi-
 mate inference strategy. The original Trueskill paper from 2007 used message passing. Carl Rasmussen's
@@ -214,7 +212,7 @@ function elbo(params,logp,num_samples)
   #Generate random samples from uniform distribution
   U=rand(size(params[1])[1],num_samples)
   #Reparametrization to genearte Gaussian of desired parameter
-  zs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*params[2] .+ params[1]
+  zs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .* exp.(params[2]) .+ params[1]
   log_z=factorized_gaussian_log_density(0,0,zs)
   logp_estimate = logp
   log_data=logp .- log_z #Separate data from logp
@@ -251,14 +249,17 @@ blue.
 Return the parameters resulting from training.
 
 ```julia
-function fit_toy_variational_dist(init_params, toy_evidence; num_itrs=200, lr= 1e-6, num_q_samples = 10)
+using Zygote
+using Logging
+
+function fit_toy_variational_dist(init_params, toy_evidence; num_itrs=200, lr= 1e-2, num_q_samples = 10)
   params_cur = init_params
   elbo_val = neg_toy_elbo(params_cur; games = toy_evidence, num_samples = num_q_samples)
   #Generate true prior
   pzs=randn(size(init_params[1])[1],num_q_samples)
   jointp(pzs)=exp.(joint_log_density(pzs,toy_evidence)) #function for contour plot
 
-  #initialize plot comment out during compile jmd
+  #Initialize plot, comment out during compiling jmd
   #plot(title="Fit Toy Variational Dist",
   #    xlabel = "Player A Skill",
   #    ylabel = "Player B Skill"
@@ -272,7 +273,7 @@ function fit_toy_variational_dist(init_params, toy_evidence; num_itrs=200, lr= 1
     #@info "loss: $(elbo) "
     #Note: the following code do the required ploting but comment out during compile jmd to avoid too much plots in the final file
     #U=rand(size(init_params[1])[1],num_q_samples)
-    #qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*params_cur[2] .+ params_cur[1]
+    #qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .* exp.(params_cur[2]) .+ params_cur[1]
     #jointq(qzs)=exp.(factorized_gaussian_log_density(params_cur[1],params_cur[2],qzs) .+
     #all_games_log_likelihood(qzs,toy_evidence))
     #display(skillcontour!(jointq,colour=1))
@@ -290,16 +291,16 @@ approximation contours (in blue) aand the target distribution (in red) on the sa
 
 ```julia
 num_players_toy = 2
-toy_mu = [-1.,0.8] # Initial mu, can initialize randomly!
-toy_ls = [0.5,0.2] # Initual log_sigma, can initialize randomly!
+toy_mu = [-2.,3.] # Initial mu, can initialize randomly!
+toy_ls = [0.5,0.] # Initual log_sigma, can initialize randomly!
 toy_params_init = (toy_mu, toy_ls)
 toy_evidence=two_player_toy_games(1,0)
-fit=fit_toy_variational_dist(toy_params_init, toy_evidence; num_itrs=200, lr= 1e-8, num_q_samples = 10)
+fit=fit_toy_variational_dist(toy_params_init, toy_evidence; num_itrs=200, lr= 1e-2, num_q_samples = 10)
 opt_params=fit[1]
 pzs=randn(size(toy_params_init[1])[1],10)
 jointp(pzs)=exp.(joint_log_density(pzs,toy_evidence)) #function for contour plot
 U=rand(size(toy_params_init[1])[1],10)
-qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*opt_params[2] .+ opt_params[1]
+qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .* exp.(opt_params[2]) .+ opt_params[1]
 jointq(qzs)=exp.(factorized_gaussian_log_density(opt_params[1],opt_params[2],qzs) .+ all_games_log_likelihood(qzs,toy_evidence))
 
 # plot result
@@ -321,16 +322,16 @@ approximation contours (in blue) aand the target distribution (in red) on the sa
 
 ```julia
 num_players_toy = 2
-toy_mu = [-1.,0.8] # Initial mu, can initialize randomly!
-toy_ls = [0.5,0.2] # Initual log_sigma, can initialize randomly!
+toy_mu = [-2.,3.] # Initial mu, can initialize randomly!
+toy_ls = [0.5,0.] # Initual log_sigma, can initialize randomly!
 toy_params_init = (toy_mu, toy_ls)
 toy_evidence=two_player_toy_games(10,0)
-fit=fit_toy_variational_dist(toy_params_init, toy_evidence; num_itrs=200, lr= 1e-8, num_q_samples = 10)
+fit=fit_toy_variational_dist(toy_params_init, toy_evidence; num_itrs=200, lr= 1e-2, num_q_samples = 10)
 opt_params=fit[1]
 pzs=randn(size(toy_params_init[1])[1],10)
 jointp(pzs)=exp.(joint_log_density(pzs,toy_evidence)) #function for contour plot
 U=rand(size(toy_params_init[1])[1],10)
-qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*opt_params[2] .+ opt_params[1]
+qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .* exp.(opt_params[2]) .+ opt_params[1]
 jointq(qzs)=exp.(factorized_gaussian_log_density(opt_params[1],opt_params[2],qzs) .+ all_games_log_likelihood(qzs,toy_evidence))
 
 # plot result
@@ -353,16 +354,16 @@ red) on the same axes.
 
 ```julia
 num_players_toy = 2
-toy_mu = [-1.,0.8] # Initial mu, can initialize randomly!
-toy_ls = [0.5,0.2] # Initual log_sigma, can initialize randomly!
+toy_mu = [-2.,3.] # Initial mu, can initialize randomly!
+toy_ls = [0.5,0.] # Initual log_sigma, can initialize randomly!
 toy_params_init = (toy_mu, toy_ls)
 toy_evidence=two_player_toy_games(10,10)
-fit=fit_toy_variational_dist(toy_params_init, toy_evidence; num_itrs=200, lr= 1e-8, num_q_samples = 10)
+fit=fit_toy_variational_dist(toy_params_init, toy_evidence; num_itrs=200, lr= 1e-2, num_q_samples = 10)
 opt_params=fit[1]
 pzs=randn(size(toy_params_init[1])[1],10)
 jointp(pzs)=exp.(joint_log_density(pzs,toy_evidence)) #function for contour plot
 U=rand(size(toy_params_init[1])[1],10)
-qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*opt_params[2] .+ opt_params[1]
+qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .* exp.(opt_params[2]) .+ opt_params[1]
 jointq(qzs)=exp.(factorized_gaussian_log_density(opt_params[1],opt_params[2],qzs) .+ all_games_log_likelihood(qzs,toy_evidence))
 
 # plot result
@@ -375,3 +376,149 @@ skillcontour!(jointp,colour="red")
 skillcontour!(jointq,colour=1)
 plot_line_equal_skill!()
 ```
+
+
+#  Approximate inference conditioned on real data [24 points]
+
+Load the dataset from tennis data.mat containing two matrices:
+
+* W is a 107 by 1 matrix, whose i'th entry is the name of player i.
+* G is a 1801 by 2 matrix of game outcomes (actually tennis matches), one row per game. The first column contains the indices of the players who won. The second column contains the indices of the player who lost.
+
+Compute the following using your code from the earlier questions in the assignment, but conditioning on
+the tennis match outcomes:
+
+(a) [1 point] For any two players i and j, $p(z_i, z_j |$ all games) is always proportional to $p(z_i, z_j$ ,all games). In
+general, are the isocontours of p($z_i, z_j |$ all games) the same as those of p($z_i, z_j |$ games between i and j)?
+That is, do the games between other players besides i and j provide information about the skill of
+players i and j? A simple yes or no suffices.
+
+Hint: One way to answer this is to draw the graphical model for three players, i, j, and k, and the
+results of games between all three pairs, and then examine conditional independencies. If you do this,
+there's no need to include the graphical models in your assignment.
+
+Answer: No, the two posterior are not the same.
+
+For the comparison I used data of three players, i, j, and k.  The game records are i and j both win once but i win k twice and k beat j. The posterior based on all
+games is not the same as the posterior only based on games bewteen i and j.
+
+```julia
+using MAT
+vars = matread("tennis_data.mat")
+player_names = vars["W"]
+tennis_games = Int.(vars["G"])
+num_players = length(player_names)
+print("Loaded data for $num_players players")
+
+three_player_games=vcat([1,2]',[2,1]',[1,3]',[1,3]',[3,2]')
+pair_games=vcat([1,2]',[2,1]')
+
+zs=randn(3,10)
+z2=zs[1:2,:]
+all_games=all_games_log_likelihood(zs,three_player_games)
+jointp3(zs)=exp.(log_prior(zs) .+all_games)
+jointp2(z2)=exp.(log_prior(z2) .+ all_games_log_likelihood(z2,pair_games))
+
+plot(title="Compare Two Posterior",
+    xlabel = "Player I Skill",
+    ylabel = "Player J Skill"
+   )
+skillcontour!(jointp2,colour="blue")
+skillcontour!(jointp3,colour="red")
+```
+
+(b) [5 points] Write a new optimization function fit variational dist like the one from the previous
+question except it does not plot anything. Initialize a variational distribution and fit it to the joint
+distribution with all the observed tennis games from the dataset. Report thenal negative ELBO
+estimate after optimization.
+
+```julia
+function fit_variational_dist(init_params, tennis_games; num_itrs=200, lr= 1e-2, num_q_samples = 10)
+  params_cur = init_params
+  elbo_val=neg_toy_elbo(params_cur; games = tennis_games, num_samples = num_q_samples)
+  for i in 1:num_itrs
+    f(params)=neg_toy_elbo(params; games = tennis_games, num_samples = num_q_samples)
+    grad_params = gradient(f, params_cur)[1]
+    params_cur =  params_cur .- grad_params .* lr
+    elbo_val=neg_toy_elbo(params_cur; games = tennis_games, num_samples = num_q_samples)
+    @info "loss: $(elbo_val) "
+  end
+  return params_cur, elbo_val
+end
+
+num_q_samples = 10
+init_mu = randn(num_players, num_q_samples)
+init_log_sigma = randn(num_players, num_q_samples)
+init_params = (init_mu, init_log_sigma)
+
+# Train variational distribution
+trained_params = fit_variational_dist(init_params, tennis_games,lr= 1e-2)
+print("Final negative ELBO:", trained_params[2])
+```
+
+(c) [2 points] Plot the approximate mean and variance of all players, sorted by skill. For example, in
+Julia, you can use: perm = sortperm(means); plot(means[perm], yerror=exp.(logstd[perm]))
+There's no need to include the names of the players.
+
+```julia
+opt_params=trained_params[1]
+means=vec(sum(opt_params[1], dims=2))
+perm = sortperm(means)
+plot(means[perm])
+```
+
+(d) [2 points] List the names of the 10 players with the highest mean skill under the variational model.
+
+```julia
+top10=perm[98:107]
+top10names=[]
+for i in 1:10
+  push!(top10names,player_names[top10[11-i]] )
+end
+print(top10names)
+
+```
+
+(e) [3 points] Plot the joint posterior over the skills of Roger Federer and Rafael Nadal.
+
+Here I ploted the posterior conditioned on all the games.
+
+```julia
+meanp1=mean(opt_params[1][1,:])
+logsp1=mean(opt_params[2][1,:])
+meanp2=mean(opt_params[1][5,:])
+logsp2=mean(opt_params[2][5,:])
+meanp=vcat(meanp1,meanp2)
+logsp=vcat(logsp1,logsp2)
+U=rand(2,10)
+z2 = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .* exp.(logsp) .+ meanp
+zs = randn(107,10)
+jointp(z2)=exp.(factorized_gaussian_log_density(meanp,logsp,z2) .+ exp.(all_games_log_likelihood(zs, tennis_games)))
+plot(title="Two Players Joint Posterior",
+    xlabel = "Roger Federer Skill",
+    ylabel = "Rafael Nadal Skill"
+   )
+skillcontour!(jointp,colour="red")
+```
+
+(f) [5 points] Derive the exact probability under a factorized Guassian over two players' skills that one
+has higher skill than the other, as a function of the two means and variances over their skills.
+
+* Hint 1: Use a linear change of variables yA; yB = zA - zB, zB. What does the line of equal skill look like after this transformation?
+
+* Hint 2: If $X \sim N(\mu, \Sigma)$, then AX $\sim N(A\mu ,A^T\Sigma A)$ where A is a linear transformation.
+
+* Hint 3: Marginalization in Gaussians is easy: if X $\sim  N(\mu , \Sigma)$, then the ith element of X has a marginal distribution $X_i \sim  N(\mu_i,\Sigma_{ii})$
+
+(g) [2 points] Compute the probability under your approximate posterior that Roger Federer has higher
+skill than Rafael Nadal. Compute this quantity exactly, and then estimate it using simple Monte Carlo
+with 10000 examples.
+
+(h) [2 points] Compute the probability that Roger Federer is better than the player with the lowest
+mean skill. Compute this quantity exactly, and then estimate it using simple Monte Carlo with 10000
+examples.
+
+(i) [2 points] Imagine that we knew ahead of time that we were examining the skills of top tennis players,
+and so changed our prior on all players to Normal(10, 1). Which answers in this section would this
+change? No need to show your work, just list the letters of the questions whose answers would be
+different in expectation.
