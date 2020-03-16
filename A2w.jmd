@@ -441,7 +441,7 @@ function fit_variational_dist(init_params, tennis_games; num_itrs=200, lr= 1e-2,
     grad_params = gradient(f, params_cur)[1]
     params_cur =  params_cur .- grad_params .* lr
     elbo_val=neg_toy_elbo(params_cur; games = tennis_games, num_samples = num_q_samples)
-    @info "loss: $(elbo_val) "
+    #@info "loss: $(elbo_val) "
   end
   return params_cur, elbo_val
 end
@@ -452,7 +452,7 @@ init_log_sigma = randn(num_players, num_q_samples)
 init_params = (init_mu, init_log_sigma)
 
 # Train variational distribution
-trained_params = fit_variational_dist(init_params, tennis_games,lr= 1e-2)
+trained_params = fit_variational_dist(init_params, tennis_games,lr= 1e-2,num_itrs=2500)
 print("Final negative ELBO:", trained_params[2])
 ```
 
@@ -463,8 +463,9 @@ There's no need to include the names of the players.
 ```julia
 opt_params=trained_params[1]
 means=vec(sum(opt_params[1], dims=2))
+logstd=vec(sum(opt_params[2],dims=2))
 perm = sortperm(means)
-plot(means[perm])
+plot(means[perm],yerror=exp.(logstd[perm]))
 ```
 
 (d) [2 points] List the names of the 10 players with the highest mean skill under the variational model.
