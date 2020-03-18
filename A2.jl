@@ -86,8 +86,8 @@ plot_line_equal_skill!()
 # TODO: plot joint contours with player A winning 1 game
 games=two_player_toy_games(5, 0)
 zs = randn(2,15)*2
-jt(zs)=exp(all_games_log_likelihood(zs,games))
-jtd(zs)=exp(joint_log_density(zs,games))
+jt(zs)=exp.(all_games_log_likelihood(zs,games))
+jtd(zs)=exp.(joint_log_density(zs,games))
 plot(title="Two Player Joint Posterior Plot",
     xlabel = "Player 1 Skill",
     ylabel = "Player 2 Skill"
@@ -124,24 +124,25 @@ function elbo(params,logp,num_samples)
   #Generate random samples from uniform distribution
   U=rand(size(params[1])[1],num_samples)
   #Reparametrization to genearte Gaussian of desired parameter
-  zs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*exp.(params[2]) .+ params[1]
+  zs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .* exp.(params[2]) .+ params[1]
+
+  logp_estimate = logp(zs)
+  #Because logp is joint density of data and p, we need separate data from logp
   log_z=factorized_gaussian_log_density(0,0,zs)
-  logp_estimate = logp
-  log_data=logp .- log_z #Separate data from logp
+  log_data=logp(zs) .- log_z
   #estimate $q_{Φ}(z|data)$
-  logq_estimate = factorized_gaussian_log_density(params[1],params[2],zs) .+ log_data
+  logq_estimate = factorized_gaussian_log_density(params[1],params[2],zs)
   return sum(logp_estimate .- logq_estimate) ./ num_samples
 end
 
 # Conveinence function for taking gradients
 function neg_toy_elbo(params; games = two_player_toy_games(1,0), num_samples = 100)
-  zs=randn(size(params[1])[1],num_samples)
-  logp = joint_log_density(zs,games)
+  logp(zs) = joint_log_density(zs,games)
   return -elbo(params,logp, num_samples)
 end
 
 
-function fit_toy_variational_dist(init_params, toy_evidence; num_itrs=200, lr= 1e-6, num_q_samples = 10)
+function fit_toy_variational_dist(init_params, toy_evidence; num_itrs=200, lr= 1e-2, num_q_samples = 10)
   params_cur = init_params
   elbo_val=neg_toy_elbo(params_cur; games = toy_evidence, num_samples = num_q_samples)
   #Generate true prior
@@ -158,7 +159,7 @@ function fit_toy_variational_dist(init_params, toy_evidence; num_itrs=200, lr= 1
     grad_params = gradient(f, params_cur)[1]
     params_cur =  params_cur .- grad_params .* lr
     elbo_val=neg_toy_elbo(params_cur; games = toy_evidence, num_samples = num_q_samples)
-    #@info "loss: $(elbo_val) "
+    @info "loss: $(elbo_val) ,($params_cur)"
     #U=rand(size(init_params[1])[1],num_q_samples)
     #qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*exp.(params_cur[2]) .+ params_cur[1]
     #jointq(qzs)=exp.(factorized_gaussian_log_density(params_cur[1],params_cur[2],qzs) .+
@@ -172,17 +173,17 @@ end
 
 
 # Toy game
-num_players_toy = 2
-toy_mu = [-1.,0.8] # Initial mu, can initialize randomly!
-toy_ls = [0.5,0.2] # Initual log_sigma, can initialize randomly!
+
+toy_mu = [1.,-1] # Initial mu, can initialize randomly!
+toy_ls = [0.5,0.5] # Initual log_sigma, can initialize randomly!
 toy_params_init = (toy_mu, toy_ls)
 toy_evidence=two_player_toy_games(10,10)
-fit=fit_toy_variational_dist(toy_params_init, toy_evidence; num_itrs=200, lr= 1e-8, num_q_samples = 10)
+fit=fit_toy_variational_dist(toy_params_init, toy_evidence; num_itrs=200, lr= 1e-2, num_q_samples = 10)
 opt_params=fit[1]
 pzs=randn(size(toy_params_init[1])[1],10)
 jointp(pzs)=exp.(joint_log_density(pzs,toy_evidence)) #function for contour plot
 U=rand(size(toy_params_init[1])[1],10)
-qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*exp.(opt_params[2]) .+ opt_params[1]
+qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*(opt_params[2]) .+ opt_params[1]
 jointq(qzs)=exp.(factorized_gaussian_log_density(opt_params[1],opt_params[2],qzs) .+ all_games_log_likelihood(qzs,toy_evidence))
 print("Final loss:",fit[2])
 #initialize plot
@@ -207,39 +208,34 @@ tennis_games = Int.(vars["G"])
 num_players = length(player_names)
 print("Loaded data for $num_players players")
 
+wonlist=tennis_games[:,1]
+lostlist=tennis_games[:,2]
+count(wonlist[i]==16 for i in 1:1801)
+count(lostlist[i]==16 for i in 1:1801)
+count(wonlist[i]==3 for i in 1:1801)
+count(lostlist[i]==3 for i in 1:1801)
+count(wonlist[i]==5 for i in 1:1801)
+count(lostlist[i]==5 for i in 1:1801)
 three_player_games=vcat([1,2]',[2,1]',[1,3]',[1,3]',[3,2]')
 pair_games=vcat([1,2]',[2,1]')
 
 zs=randn(3,10)
 z2=zs[1:2,:]
 
-
 all_games=all_games_log_likelihood(zs,three_player_games)
-pa2(z2)=exp.(log_prior(z2) .+ all_games_log_likelihood(z2,pair_games))
 
-p3(z2)=exp.(log_prior(z2) .+all_games)
+jointp3(z2)=exp.(log_prior(z2) .+all_games)
+#j Posterior of only games between two players
+jointp2(z2)=exp.(log_prior(z2) .+ all_games_log_likelihood(z2,pair_games))
+
 plot(title="Fit Toy Variational Dist",
     xlabel = "Player A Skill",
     ylabel = "Player B Skill"
    )
-skillcontour!(pa2,colour="blue")
-skillcontour!(p3,colour="red")
+skillcontour!(jointp2,colour="blue")
+skillcontour!(jointp3,colour="red")
 
 
-
-
-tennis_games[tennis_games[:,1][i]==1 for i in 1:107]
-tennis_games[filter(x->x==1,tn),:]
-tn=tennis_games
-player1_games=[[]]
-for i in 1:length(tennis_games)
-  if tennis_games[i,1]==1
-    append!(player1_games, tennis_games[i,:])
-  end
-end
-p1=fill(Int[], 1, 2)
-
-reshape([1,2],1,2)
 
 function fit_variational_dist(init_params, tennis_games; num_itrs=200, lr= 1e-2, num_q_samples = 10)
   params_cur = init_params
@@ -249,7 +245,7 @@ function fit_variational_dist(init_params, tennis_games; num_itrs=200, lr= 1e-2,
     grad_params = gradient(f, params_cur)[1]
     params_cur =  params_cur .- grad_params .* lr
     elbo_val=neg_toy_elbo(params_cur; games = tennis_games, num_samples = num_q_samples)
-    @info "loss: $(elbo_val) "
+    #@info "loss: $(elbo_val)"
   end
   return params_cur, elbo_val
 end
@@ -260,32 +256,58 @@ init_log_sigma = randn(num_players, num_q_samples)
 init_params = (init_mu, init_log_sigma)
 
 # Train variational distribution
-trained_params = fit_variational_dist(init_params, tennis_games,lr= 1e-10)
+trained_params = fit_variational_dist(init_params, tennis_games,num_itrs=500,lr= 1e-2,num_q_samples=num_q_samples )
 print("Final negative ELBO:", trained_params[2])
 opt_params=trained_params[1]
 means=vec(sum(opt_params[1], dims=2))
+logstd=vec(sum(opt_params[2],dims=2))
 perm = sortperm(means)
-print(perm[98:107])
+top10=perm[98:107]
+top10names=[]
+for i in 1:10
+  push!(top10names,player_names[top10[11-i]] )
+end
+print(top10names)
 
-plot(means[perm])
 
-meanp1=mean(opt_params[1][1,:])
-logsp1=mean(opt_params[2][1,:])
-meanp2=mean(opt_params[1][5,:])
-logsp2=mean(opt_params[2][5,:])
-meanp=vcat(meanp1,meanp2)
-logsp=vcat(logsp1,logsp2)
+plot(means[perm],yerror=exp.(logstd[perm]))
+
+U=rand(size(init_params[1])[1],10)
+qzs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .*(opt_params[2]) .+ opt_params[1]
+logq=(-1/2)*log.(2π .* opt_params[2].^2) .+ -1/2 * ((qzs .- opt_params[1]).^2)./(opt_params[1].^2)
+qdata=logq .+ all_games_log_likelihood(qzs,tennis_games)
+
+
+
+
+
+meanRN=mean(opt_params[1][1,:])
+logsRN=mean(opt_params[2][1,:])
+meanRF=mean(opt_params[1][5,:])
+logsRF=mean(opt_params[2][5,:])
+meanp=vcat(meanRN,meanRF)
+logsp=vcat(logsRN,logsRF)
 U=rand(2,10)
-zs = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .* exp.(logsp) .+ meanp
-jointp(zs)=exp.(factorized_gaussian_log_density(meanp,logsp,zs))
+z2 = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .* exp.(logsp) .+ meanp
+zs = randn(107,10)
+jointp(z2)=exp.(factorized_gaussian_log_density(meanp,logsp,z2) .+ exp.(all_games_log_likelihood(zs, tennis_games)))
 plot(title="Fit Toy Variational Dist",
     xlabel = "Player A Skill",
     ylabel = "Player B Skill"
    )
 skillcontour!(jointp,colour="red")
 
-#TODO: 10 players with highest mean skill under variational model
-#hint: use sortperm
+using Distributions
+yA=1 - cdf(Normal(), (meanRN-meanRF)/sqrt(exp(logsRF)^2 + exp(logsRN)^2))
 
-#TODO: joint posterior over "Roger-Federer" and ""Rafael-Nadal""
-#hint: findall function to find the index of these players in player_names
+
+
+Pab=0
+for i in 1:10000
+ U=rand(2)
+ samples = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .* exp.(logsp) .+ meanp
+ if (samples[2] > samples[1])
+    global Pab=Pab+1
+ end
+end
+print(Pab/10000)

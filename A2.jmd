@@ -396,9 +396,10 @@ Hint: One way to answer this is to draw the graphical model for three players, i
 results of games between all three pairs, and then examine conditional independencies. If you do this,
 there's no need to include the graphical models in your assignment.
 
-Answer: No, the two posterior are not the same.
+Answer: No, the the isocontours of two posterior are not the same, and yes, the games between other players besides i and j provide information about the skill of
+players i and j.
 
-For the comparison I used data of three players, i, j, and k.  The game records are i and j both win once but i win k twice and k beat j. The posterior based on all
+For comparison I used data of three players, i, j, and k.  The game records are i and j both win once but i beat k twice and k beat j. The posterior based on all
 games is not the same as the posterior only based on games bewteen i and j.
 
 ```julia
@@ -408,14 +409,16 @@ player_names = vars["W"]
 tennis_games = Int.(vars["G"])
 num_players = length(player_names)
 print("Loaded data for $num_players players")
+# Create two sets of games
 
 three_player_games=vcat([1,2]',[2,1]',[1,3]',[1,3]',[3,2]')
 pair_games=vcat([1,2]',[2,1]')
 
 zs=randn(3,10)
 z2=zs[1:2,:]
-all_games=all_games_log_likelihood(zs,three_player_games)
-jointp3(zs)=exp.(log_prior(zs) .+all_games)
+# Posterior conditioning on all games between three palyers
+jointp3(z2)=exp.(log_prior(z2) .+ all_games_log_likelihood(zs,three_player_games))
+#j Posterior conditioning on only games between two players
 jointp2(z2)=exp.(log_prior(z2) .+ all_games_log_likelihood(z2,pair_games))
 
 plot(title="Compare Two Posterior",
@@ -425,6 +428,7 @@ plot(title="Compare Two Posterior",
 skillcontour!(jointp2,colour="blue")
 skillcontour!(jointp3,colour="red")
 ```
+The contours are showing difference.
 
 (b) [5 points] Write a new optimization function fit variational dist like the one from the previous
 question except it does not plot anything. Initialize a variational distribution and fit it to the joint
@@ -445,7 +449,7 @@ function fit_variational_dist(init_params, tennis_games; num_itrs=200, lr= 1e-2,
   return params_cur, elbo_val
 end
 
-num_q_samples = 50
+num_q_samples = 10
 init_mu = randn(num_players, num_q_samples)
 init_log_sigma = randn(num_players, num_q_samples)
 init_params = (init_mu, init_log_sigma)
@@ -484,15 +488,15 @@ print(top10names)
 Here I ploted the posterior conditioned on all the games.
 
 ```julia
-#The parameter of Rafael Nadal
-meanp1=mean(opt_params[1][1,:])
-logsp1=mean(opt_params[2][1,:])
-#The parameter of Roger Federer
-meanp2=mean(opt_params[1][5,:])
-logsp2=mean(opt_params[2][5,:])
+#The parameters of Rafael Nadal
+meanRN=mean(opt_params[1][1,:])
+logsRN=mean(opt_params[2][1,:])
+#The parameters of Roger Federer
+meanRF=mean(opt_params[1][5,:])
+logsRF=mean(opt_params[2][5,:])
 
-meanp=vcat(meanp1,meanp2)
-logsp=vcat(logsp1,logsp2)
+meanp=vcat(meanRN,meanRF)
+logsp=vcat(logsRN,logsRF)
 U=rand(2,10)
 z2 = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .* exp.(logsp) .+ meanp
 zs = randn(107,10)
@@ -583,11 +587,78 @@ So the probability zA greater than zB is:
 skill than Rafael Nadal. Compute this quantity exactly, and then estimate it using simple Monte Carlo
 with 10000 examples.
 
+(1) Denote Roger Federer has skill zA, Rafael Nadal has skill zB, according to result of (f), the probablility
+that zA greater zB is $1 - \Phi ( \frac{ \mu B - \mu A} {\sqrt{\sigma_A^2 + \sigma_B^2)}})$
+
+The posterior mean and logsigma of these two players were calculated in (e):
+
+```julia
+print(meanRF, "  " ,logsRF)
+print(meanRN, "  ", logsRN)
+```
+Note: the mean and logsigma values depend on number of q samples.
+
+So by the above formula, probability under my approximate posterior that Roger Federer has higher
+skill than Rafael Nadal is:
+
+```julia
+using Distributions
+yA=1 - cdf(Normal(), (meanRN-meanRF)/sqrt(exp(logsRF)^2 + exp(logsRN)^2))
+```
+(2) Using simple Monte Carlo with 10000 examples taken from $q_{\phi}(z|data)$, and count the case where
+Roger Federer has higher skill than Rafael Nadal. Since we use factorized Gaussian as $q_{\phi}(z|data)$,
+samples are then taken from the factorized Gaussian distrubution with parameters obtained from previous result.
+
+```julia
+
+meanp=vcat(meanRF,meanRN)
+logsp=vcat(logsRF,logsRN)
+Pab=0
+for i in 1:10000
+ U=rand(2)
+ samples = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .* exp.(logsp) .+ meanp
+ if (samples[1] > samples[2])
+    global Pab=Pab+1
+ end
+end
+print(Pab/10000)
+```
+
+
 (h) [2 points] Compute the probability that Roger Federer is better than the player with the lowest
 mean skill. Compute this quantity exactly, and then estimate it using simple Monte Carlo with 10000
 examples.
+
+The lowest mean skill player can be obtained from perm[1], because permsort() sort in ascending order.
+```julia
+print("Worst Player order in name list:  ", perm[1])
+print("Worst Player name:  ",player_names[perm[1]])
+```
+Use the same method in (g):
+Compute exactly:
+```julia
+mean_worst=mean(opt_params[1][perm[1],:])
+logs_worst=mean(opt_params[2][perm[1],:])
+yA=1 - cdf(Normal(), (mean_worst-meanRF)/sqrt(exp(logsRF)^2 + exp(logs_worst)^2))
+```
+Compute using simple Monte Carlo:
+```julia
+meanp=vcat(meanRF,mean_worst)
+logsp=vcat(logsRF,logs_worst)
+Pab=0
+for i in 1:10000
+ U=rand(2)
+ samples = sqrt.(-2.0 .* log.(U)) .* cos.(2*pi .* U) .* exp.(logsp) .+ meanp
+ if (samples[1] > samples[2])
+    global Pab=Pab+1
+ end
+end
+print(Pab/10000)
+```
 
 (i) [2 points] Imagine that we knew ahead of time that we were examining the skills of top tennis players,
 and so changed our prior on all players to Normal(10, 1). Which answers in this section would this
 change? No need to show your work, just list the letters of the questions whose answers would be
 different in expectation.
+
+The answer will be different is (e), the position of the contour will change relative to the axes.
