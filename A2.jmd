@@ -449,7 +449,7 @@ function fit_variational_dist(init_params, tennis_games; num_itrs=200, lr= 1e-2,
   return params_cur, elbo_val
 end
 
-num_q_samples = 10
+num_q_samples = 50
 init_mu = randn(num_players, num_q_samples)
 init_log_sigma = randn(num_players, num_q_samples)
 init_params = (init_mu, init_log_sigma)
@@ -596,8 +596,6 @@ The posterior mean and logsigma of these two players were calculated in (e):
 print(meanRF, "  " ,logsRF)
 print(meanRN, "  ", logsRN)
 ```
-Note: the mean and logsigma values depend on number of q samples.
-
 So by the above formula, probability under my approximate posterior that Roger Federer has higher
 skill than Rafael Nadal is:
 
@@ -605,9 +603,17 @@ skill than Rafael Nadal is:
 using Distributions
 yA=1 - cdf(Normal(), (meanRN-meanRF)/sqrt(exp(logsRF)^2 + exp(logsRN)^2))
 ```
+Note: the mean and logsigma values depend on number of q samples, so will affect the final probability value.
+
 (2) Using simple Monte Carlo with 10000 examples taken from $q_{\phi}(z|data)$, and count the case where
-Roger Federer has higher skill than Rafael Nadal. Since we use factorized Gaussian as $q_{\phi}(z|data)$,
-samples are then taken from the factorized Gaussian distrubution with parameters obtained from previous result.
+Roger Federer has higher skill than Rafael Nadal.
+
+Since we use factorized Gaussian as $q_{\phi}(z|data)$,samples are then taken from the factorized Gaussian
+distrubution with parameters obtained from previous result.
+
+Then use approximation of $q_{\phi}(z|data)$, to estimate P($Z_A > Z_B|data)$:
+
+ P($zA > zB|data)= E_{q_\phi(zA,zB|data)}(I(zA > zB))$
 
 ```julia
 
@@ -661,4 +667,5 @@ and so changed our prior on all players to Normal(10, 1). Which answers in this 
 change? No need to show your work, just list the letters of the questions whose answers would be
 different in expectation.
 
-The answer will be different is (e), the position of the contour will change relative to the axes.
+The answers in section 4 will be different are:
+(d), the top10 list; (e), the position of the contour will change relative to the axes; (g) the probability would be different.
